@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head><title>Icon Generator</title></head>
+<body>
+<p>아래 버튼을 눌러 아이콘을 저장하세요.</p>
+<canvas id="c"></canvas><br>
+<button onclick="gen(192)">192x192 저장</button>
+<button onclick="gen(512)">512x512 저장</button>
+<script>
+function gen(size) {
+  const c = document.getElementById('c');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  // 배경
+  ctx.fillStyle = '#111';
+  ctx.fillRect(0,0,size,size);
+  // 원형 그라디언트
+  const g = ctx.createRadialGradient(size/2,size/2,0,size/2,size/2,size*0.45);
+  g.addColorStop(0,'#b43ce6');
+  g.addColorStop(1,'#3c78ff');
+  ctx.beginPath();
+  ctx.arc(size/2,size/2,size*0.42,0,Math.PI*2);
+  ctx.fillStyle = g;
+  ctx.fill();
+  // 텍스트
+  ctx.fillStyle = '#ffd700';
+  ctx.font = `bold ${size*0.28}px Segoe UI, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('BV', size/2, size/2);
+  // 다운로드
+  const a = document.createElement('a');
+  a.download = `icon-${size}.png`;
+  a.href = c.toDataURL('image/png');
+  a.click();
+}
+</script>
+</body>
+</html>

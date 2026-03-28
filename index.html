@@ -3,6 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#ffd700">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="BeatVerse">
+<link rel="manifest" href="manifest.json">
 <title>BeatVerse</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -58,6 +64,27 @@ canvas { display: block; width: 100%; height: 100%; }
 }
 #restartBtn:hover { background: #444; }
 
+/* 메뉴 버튼 */
+#menuBtn {
+  position: absolute; top: 12px; left: 16px;
+  background: rgba(0,0,0,0.5); border: 1px solid #555; color: #fff;
+  font-size: 20px; padding: 6px 10px; border-radius: 8px; cursor: pointer; z-index: 5;
+}
+#menuPanel {
+  position: absolute; top: 56px; left: 16px;
+  background: rgba(0,0,0,0.9); border: 1px solid #555; border-radius: 10px;
+  padding: 14px 18px; display: none; z-index: 10; min-width: 200px;
+}
+#menuPanel.open { display: block; }
+#installBtn {
+  width: 100%; padding: 10px 14px; font-size: 15px; font-weight: bold;
+  background: linear-gradient(135deg,#3c78ff,#b43ce6);
+  border: none; color: #fff; border-radius: 8px; cursor: pointer;
+  display: flex; align-items: center; gap: 8px; justify-content: center;
+}
+#installBtn:disabled { opacity: 0.45; cursor: default; }
+#installNote { font-size: 12px; color: #888; margin-top: 8px; text-align: center; }
+
 #touchButtons { position: absolute; bottom: 0; left: 0; width: 100%; display: flex; height: 72px; }
 .tb {
   flex: 1; border: none; font-size: 13px; font-weight: bold;
@@ -82,6 +109,13 @@ canvas { display: block; width: 100%; height: 100%; }
     <p>계시록 암송 리듬게임</p>
     <button id="startBtn" disabled>로딩 중...</button>
     <div id="loadingMsg">음원 로딩 중...</div>
+  </div>
+
+  <!-- 메뉴 -->
+  <button id="menuBtn" onclick="toggleMenu()">☰</button>
+  <div id="menuPanel">
+    <button id="installBtn" onclick="triggerInstall()">📲 홈 화면에 추가</button>
+    <div id="installNote"></div>
   </div>
 
   <!-- 설정 -->
@@ -168,6 +202,11 @@ function loadStats() {
   catch(e) { return {plays:0,tp:0,tg:0,tm:0,bc:0,bs:0,spd:5}; }
 }
 function saveStats(s) { try { localStorage.setItem('bv2', JSON.stringify(s)); } catch(e){} }
+
+// ── 서비스 워커 등록 ──
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js').catch(() => {});
+}
 
 // ── 초기화 ──
 window.addEventListener('load', () => {
@@ -655,8 +694,54 @@ function startGame() {
   state      = 'intro';
 }
 
+// ── 메뉴 / PWA 설치 ──
+let deferredInstallPrompt = null;
+
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  updateInstallBtn();
+});
+window.addEventListener('appinstalled', () => {
+  deferredInstallPrompt = null;
+  updateInstallBtn();
+  document.getElementById('installNote').textContent = '설치 완료!';
+});
+
+function updateInstallBtn() {
+  const btn  = document.getElementById('installBtn');
+  const note = document.getElementById('installNote');
+  if (deferredInstallPrompt) {
+    btn.disabled = false;
+    note.textContent = '';
+  } else if (window.matchMedia('(display-mode: standalone)').matches || navigator.standalone) {
+    btn.disabled = true;
+    note.textContent = '이미 홈 화면에 설치되어 있습니다.';
+  } else {
+    btn.disabled = true;
+    note.textContent = '브라우저 메뉴 → "홈 화면에 추가"를 이용하세요.';
+  }
+}
+
+function toggleMenu() {
+  document.getElementById('menuPanel').classList.toggle('open');
+  document.getElementById('settingsPanel').classList.remove('open');
+  updateInstallBtn();
+}
+
+async function triggerInstall() {
+  if (!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  const { outcome } = await deferredInstallPrompt.userChoice;
+  if (outcome === 'accepted') deferredInstallPrompt = null;
+  updateInstallBtn();
+}
+
 // ── 설정 ──
-function toggleSettings() { document.getElementById('settingsPanel').classList.toggle('open'); }
+function toggleSettings() {
+  document.getElementById('settingsPanel').classList.toggle('open');
+  document.getElementById('menuPanel').classList.remove('open');
+}
 function onSpeedChange(v) {
   speedLevel = parseInt(v);
   document.getElementById('speedLabel').textContent = speedLevel;
