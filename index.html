@@ -46,7 +46,8 @@ canvas { display: block; width: 100%; height: 100%; }
   flex-direction: column; align-items: center; justify-content: center; z-index: 20;
 }
 #resultScreen.open { display: flex; }
-#resultScreen h2 { font-size: 44px; margin-bottom: 24px; color: #ffd700; letter-spacing: 4px; }
+#resultScreen h2 { font-size: 44px; margin-bottom: 8px; color: #ffd700; letter-spacing: 4px; }
+.rScore { font-size: 52px; font-weight: bold; color: #fff; margin-bottom: 20px; letter-spacing: 2px; }
 .rRow { font-size: 20px; margin: 6px 0; }
 .rRow span { color: #ffd700; font-weight: bold; margin-left: 10px; }
 .rDiv { width: 240px; border: none; border-top: 1px solid #444; margin: 16px 0; }
@@ -102,6 +103,7 @@ canvas { display: block; width: 100%; height: 100%; }
   <!-- 결과 화면 -->
   <div id="resultScreen">
     <h2>RESULT</h2>
+    <div class="rScore" id="rScore">0</div>
     <div class="rRow">PERFECT <span id="rP">0</span></div>
     <div class="rRow">GOOD    <span id="rG">0</span></div>
     <div class="rRow">MISS    <span id="rM">0</span></div>
@@ -109,6 +111,7 @@ canvas { display: block; width: 100%; height: 100%; }
     <hr class="rDiv">
     <div class="rSub">누적 통계</div>
     <div class="rRow">총 플레이    <span id="rTP">0</span></div>
+    <div class="rRow">역대 최고 점수 <span id="rBS">0</span></div>
     <div class="rRow">누적 PERFECT <span id="rTotP">0</span></div>
     <div class="rRow">누적 GOOD    <span id="rTotG">0</span></div>
     <div class="rRow">누적 MISS    <span id="rTotM">0</span></div>
@@ -160,8 +163,8 @@ function getSmoothAudioTime() {
 
 // ── localStorage ──
 function loadStats() {
-  try { return JSON.parse(localStorage.getItem('bv2') || 'null') || {plays:0,tp:0,tg:0,tm:0,bc:0,spd:5}; }
-  catch(e) { return {plays:0,tp:0,tg:0,tm:0,bc:0,spd:5}; }
+  try { return JSON.parse(localStorage.getItem('bv2') || 'null') || {plays:0,tp:0,tg:0,tm:0,bc:0,bs:0,spd:5}; }
+  catch(e) { return {plays:0,tp:0,tg:0,tm:0,bc:0,bs:0,spd:5}; }
 }
 function saveStats(s) { try { localStorage.setItem('bv2', JSON.stringify(s)); } catch(e){} }
 
@@ -667,12 +670,16 @@ function endGame() {
   const s = loadStats();
   s.plays++; s.tp += perfects; s.tg += goods; s.tm += misses;
   if (maxCombo > s.bc) s.bc = maxCombo;
+  if (!s.bs) s.bs = 0;
+  if (score > s.bs) s.bs = score;
   saveStats(s);
+  document.getElementById('rScore').textContent = score.toLocaleString();
   document.getElementById('rP').textContent    = perfects;
   document.getElementById('rG').textContent    = goods;
   document.getElementById('rM').textContent    = misses;
   document.getElementById('rC').textContent    = maxCombo;
   document.getElementById('rTP').textContent   = s.plays;
+  document.getElementById('rBS').textContent   = s.bs.toLocaleString();
   document.getElementById('rTotP').textContent = s.tp;
   document.getElementById('rTotG').textContent = s.tg;
   document.getElementById('rTotM').textContent = s.tm;
