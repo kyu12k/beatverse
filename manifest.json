@@ -2,7 +2,7 @@
   "name": "BeatVerse",
   "short_name": "BeatVerse",
   "description": "계시록 암송 리듬게임",
-  "start_url": "./index.html",
+  "start_url": "/",
   "display": "standalone",
   "orientation": "landscape",
   "background_color": "#111111",
