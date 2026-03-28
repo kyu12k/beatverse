@@ -64,15 +64,15 @@ canvas { display: block; width: 100%; height: 100%; }
 }
 #restartBtn:hover { background: #444; }
 
-/* 메뉴 버튼 */
+/* 메뉴 버튼 (overlay 안에 절대 위치) */
 #menuBtn {
   position: absolute; top: 12px; left: 16px;
-  background: rgba(0,0,0,0.5); border: 1px solid #555; color: #fff;
+  background: rgba(255,255,255,0.1); border: 1px solid #555; color: #fff;
   font-size: 20px; padding: 6px 10px; border-radius: 8px; cursor: pointer; z-index: 5;
 }
 #menuPanel {
   position: absolute; top: 56px; left: 16px;
-  background: rgba(0,0,0,0.9); border: 1px solid #555; border-radius: 10px;
+  background: rgba(0,0,0,0.95); border: 1px solid #555; border-radius: 10px;
   padding: 14px 18px; display: none; z-index: 10; min-width: 200px;
 }
 #menuPanel.open { display: block; }
@@ -105,17 +105,15 @@ canvas { display: block; width: 100%; height: 100%; }
 
   <!-- 시작 화면 -->
   <div id="overlay">
+    <button id="menuBtn" onclick="toggleMenu()">☰</button>
+    <div id="menuPanel">
+      <button id="installBtn" onclick="triggerInstall()">📲 홈 화면에 추가</button>
+      <div id="installNote"></div>
+    </div>
     <h1>BeatVerse</h1>
     <p>계시록 암송 리듬게임</p>
     <button id="startBtn" disabled>로딩 중...</button>
     <div id="loadingMsg">음원 로딩 중...</div>
-  </div>
-
-  <!-- 메뉴 -->
-  <button id="menuBtn" onclick="toggleMenu()">☰</button>
-  <div id="menuPanel">
-    <button id="installBtn" onclick="triggerInstall()">📲 홈 화면에 추가</button>
-    <div id="installNote"></div>
   </div>
 
   <!-- 설정 -->
