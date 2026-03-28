@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>BeatVerse</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #111; color: #fff; font-family: 'Segoe UI', sans-serif; overflow: hidden; width: 100vw; height: 100vh; }
+#gameContainer { position: relative; width: 100vw; height: 100vh; }
+canvas { display: block; width: 100%; height: 100%; }
+
+#overlay {
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  z-index: 30; background: rgba(0,0,0,0.92);
+}
+#overlay h1 { font-size: 56px; font-weight: bold; color: #ffd700; letter-spacing: 6px; margin-bottom: 10px; text-shadow: 0 0 30px #ffd700; }
+#overlay p  { font-size: 16px; color: #888; margin-bottom: 48px; }
+#startBtn {
+  padding: 18px 60px; font-size: 24px; font-weight: bold;
+  background: linear-gradient(135deg,#3c78ff,#b43ce6);
+  border: none; color: #fff; border-radius: 12px; cursor: pointer;
+  box-shadow: 0 0 30px rgba(100,100,255,0.5); transition: transform 0.1s;
+}
+#startBtn:hover { transform: scale(1.05); }
+#loadingMsg { font-size: 16px; color: #888; margin-top: 16px; }
+
+#settingsBtn {
+  position: absolute; top: 12px; right: 16px;
+  background: rgba(0,0,0,0.5); border: 1px solid #555; color: #fff;
+  font-size: 20px; padding: 6px 10px; border-radius: 8px; cursor: pointer; z-index: 5;
+}
+#settingsPanel {
+  position: absolute; top: 56px; right: 16px;
+  background: rgba(0,0,0,0.9); border: 1px solid #555; border-radius: 10px;
+  padding: 18px 22px; display: none; z-index: 10; min-width: 200px;
+}
+#settingsPanel.open { display: block; }
+#settingsPanel label { font-size: 14px; color: #aaa; display: block; margin-bottom: 8px; }
+#settingsPanel input[type=range] { width: 100%; cursor: pointer; }
+
+#resultScreen {
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0,0,0,0.92); display: none;
+  flex-direction: column; align-items: center; justify-content: center; z-index: 20;
+}
+#resultScreen.open { display: flex; }
+#resultScreen h2 { font-size: 44px; margin-bottom: 24px; color: #ffd700; letter-spacing: 4px; }
+.rRow { font-size: 20px; margin: 6px 0; }
+.rRow span { color: #ffd700; font-weight: bold; margin-left: 10px; }
+.rDiv { width: 240px; border: none; border-top: 1px solid #444; margin: 16px 0; }
+.rSub { font-size: 14px; color: #888; margin-bottom: 4px; }
+#restartBtn {
+  margin-top: 32px; padding: 14px 44px; font-size: 20px;
+  background: #222; border: 1px solid #666; color: #fff; border-radius: 10px; cursor: pointer;
+}
+#restartBtn:hover { background: #444; }
+
+#touchButtons { position: absolute; bottom: 0; left: 0; width: 100%; display: flex; height: 72px; }
+.tb {
+  flex: 1; border: none; font-size: 13px; font-weight: bold;
+  color: rgba(255,255,255,0.8); line-height: 1.3; cursor: pointer;
+  user-select: none; -webkit-user-select: none;
+}
+.tb:active, .tb.on { filter: brightness(2.2); }
+#tb0 { background: rgba(60,120,255,0.25);  border-right: 1px solid #333; }
+#tb1 { background: rgba(60,210,100,0.25);  border-right: 1px solid #333; }
+#tb2 { background: rgba(230,210,60,0.25);  border-right: 1px solid #333; }
+#tb3 { background: rgba(230,130,60,0.25);  border-right: 1px solid #333; }
+#tb4 { background: rgba(180,60,230,0.25); }
+</style>
+</head>
+<body>
+<div id="gameContainer">
+  <canvas id="gameCanvas"></canvas>
+
+  <!-- 시작 화면 -->
+  <div id="overlay">
+    <h1>BeatVerse</h1>
+    <p>계시록 암송 리듬게임</p>
+    <button id="startBtn" disabled>로딩 중...</button>
+    <div id="loadingMsg">음원 로딩 중...</div>
+  </div>
+
+  <!-- 설정 -->
+  <button id="settingsBtn" onclick="toggleSettings()">⚙️</button>
+  <div id="settingsPanel">
+    <label>노트 속도: <strong id="speedLabel">5</strong></label>
+    <input type="range" id="speedSlider" min="1" max="10" value="5" oninput="onSpeedChange(this.value)">
+  </div>
+
+  <!-- 터치 버튼 -->
+  <div id="touchButtons">
+    <button class="tb" id="tb0">A<br>1</button>
+    <button class="tb" id="tb1">S<br>2</button>
+    <button class="tb" id="tb2">D<br>3</button>
+    <button class="tb" id="tb3">F<br>4</button>
+    <button class="tb" id="tb4">Space<br>5+</button>
+  </div>
+
+  <!-- 결과 화면 -->
+  <div id="resultScreen">
+    <h2>RESULT</h2>
+    <div class="rRow">PERFECT <span id="rP">0</span></div>
+    <div class="rRow">GOOD    <span id="rG">0</span></div>
+    <div class="rRow">MISS    <span id="rM">0</span></div>
+    <div class="rRow">최고 콤보 <span id="rC">0</span></div>
+    <hr class="rDiv">
+    <div class="rSub">누적 통계</div>
+    <div class="rRow">총 플레이    <span id="rTP">0</span></div>
+    <div class="rRow">누적 PERFECT <span id="rTotP">0</span></div>
+    <div class="rRow">누적 GOOD    <span id="rTotG">0</span></div>
+    <div class="rRow">누적 MISS    <span id="rTotM">0</span></div>
+    <div class="rRow">역대 최고 콤보 <span id="rBC">0</span></div>
+    <button id="restartBtn" onclick="restartGame()">다시하기</button>
+  </div>
+</div>
+
+<script>
+// ── 상수 ──
+const LANE_KEYS   = ['a','s','d','f',' '];
+const LANE_RGB    = ['60,120,255','60,210,100','230,210,60','230,130,60','180,60,230'];
+const LANE_COLORS = LANE_RGB.map(r => `rgba(${r},0.9)`);
+const LANE_GLOW   = ['#3c78ff','#3cd264','#e6d23c','#e6823c','#b43ce6'];
+const T_PERFECT   = 80;   // ms
+const T_GOOD      = 150;  // ms
+const T_MISS      = 210;  // ms (노트가 이 ms 지나면 자동 미스)
+const LONG_THRESH = 0.5;  // 초 이상이면 롱노트
+
+// ── 전역 변수 ──
+let canvas, ctx, audio, notes = [];
+// state: 'loading' | 'ready' | 'intro' | 'playing' | 'result'
+let state        = 'loading';
+let speedLevel   = 5;
+let score = 0, combo = 0, maxCombo = 0, perfects = 0, goods = 0, misses = 0;
+let judgmentY = 0, laneW = 0;
+let currentWord = '', wordTimer = 0, wordHolding = false; // wordHolding: 롱노트 홀드 중 단어 유지
+let judgText = '', judgColor = '', judgTimer = 0;
+let pressFlash   = [0,0,0,0,0];
+let introStart   = 0, countVal = 3, scanlines = [];
+let prevTime     = 0;
+
+// 오디오 시간 보간용 (audio.currentTime은 ~23ms 간격 업데이트라 노트가 뚝뚝 끊김)
+let audioSyncTime = 0;   // 마지막으로 읽은 audio.currentTime
+let audioSyncNow  = 0;   // 그때의 performance.now()
+
+function getSmoothAudioTime() {
+  const real = audio.currentTime;
+  if (real !== audioSyncTime) {
+    audioSyncTime = real;
+    audioSyncNow  = performance.now();
+  }
+  // audio가 재생 중일 때만 보간, 정지 중엔 그대로
+  if (!audio.paused) {
+    return audioSyncTime + (performance.now() - audioSyncNow) / 1000;
+  }
+  return audioSyncTime;
+}
+
+// ── localStorage ──
+function loadStats() {
+  try { return JSON.parse(localStorage.getItem('bv2') || 'null') || {plays:0,tp:0,tg:0,tm:0,bc:0,spd:5}; }
+  catch(e) { return {plays:0,tp:0,tg:0,tm:0,bc:0,spd:5}; }
+}
+function saveStats(s) { try { localStorage.setItem('bv2', JSON.stringify(s)); } catch(e){} }
+
+// ── 초기화 ──
+window.addEventListener('load', () => {
+  canvas = document.getElementById('gameCanvas');
+  ctx    = canvas.getContext('2d');
+  resize();
+  window.addEventListener('resize', resize);
+
+  const s = loadStats();
+  speedLevel = s.spd || 5;
+  document.getElementById('speedSlider').value = speedLevel;
+  document.getElementById('speedLabel').textContent = speedLevel;
+
+  // 노트 데이터 로드
+  fetch('word_timestamps.json')
+    .then(r => r.json())
+    .then(data => {
+      buildNotes(data);
+      // 오디오 로드 시작 (기다리지 않음 - 카운트다운 3초 동안 로드)
+      audio = new Audio('videoplayback.m4a');
+      audio.preload = 'auto';
+      audio.load();
+
+      // Chrome이 Space 키로 오디오를 멈추는 것을 차단
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.setActionHandler('pause', () => {});
+        navigator.mediaSession.setActionHandler('play',  () => {});
+      }
+
+      // 캡처 단계에서 게임 키(A/S/D/F/Space)의 브라우저 기본 동작을 완전 차단
+      // (Space 길게 누름 → 미디어 일시정지 등 브라우저 내장 동작 방지)
+      document.addEventListener('keydown', e => {
+        if (LANE_KEYS.includes(e.key === ' ' ? ' ' : e.key.toLowerCase())) {
+          e.preventDefault();
+        }
+      }, { capture: true, passive: false });
+      document.addEventListener('keyup', e => {
+        if (LANE_KEYS.includes(e.key === ' ' ? ' ' : e.key.toLowerCase())) {
+          e.preventDefault();
+        }
+      }, { capture: true, passive: false });
+
+      document.addEventListener('keydown', onKeyDown);
+      document.addEventListener('keyup',   onKeyUp);
+      setupTouch();
+
+      // 시작 버튼 활성화
+      const btn = document.getElementById('startBtn');
+      btn.disabled = false;
+      btn.textContent = '▶ 시작하기';
+      btn.onclick = startGame;
+      document.getElementById('loadingMsg').textContent = '';
+
+      state    = 'ready';
+      prevTime = performance.now();
+      requestAnimationFrame(frame);
+    })
+    .catch(err => {
+      document.getElementById('loadingMsg').textContent = '로드 실패: ' + err.message;
+    });
+});
+
+function resize() {
+  canvas.width  = window.innerWidth;
+  canvas.height = window.innerHeight;
+  judgmentY = canvas.height * 0.85;
+  laneW     = canvas.width / 5;
+}
+
+// ── 노트 파싱 ──
+function buildNotes(data) {
+  notes = data.map((d, i) => ({
+    id:      i,
+    word:    d.word,
+    hitTime: d.start,
+    endTime: d.end,
+    lane:    Math.min(d.syllables, 5) - 1,
+    isLong:  (d.end - d.start) >= LONG_THRESH,
+    state:   'pending',
+  }));
+}
+
+// ── 속도 ──
+function getFallSec() {
+  // speed 1 → 3.3s, speed 5 → 1.5s, speed 10 → 0.3s
+  return (11 - speedLevel) * 0.3 + 0.3;
+}
+function getPxPerSec() { return judgmentY / getFallSec(); }
+
+// ── 메인 루프 ──
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min(now - prevTime, 50);
+  prevTime = now;
+
+  if (state === 'ready') {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawBg(); drawLanes(); drawJudgLine();
+    return;
+  }
+  if (state === 'intro') {
+    updateIntro(now, dt);
+    drawIntro(now);
+    return;
+  }
+  if (state === 'playing') {
+    const t = getSmoothAudioTime();
+    autoMiss(t);
+    autoRelease(t);
+    drawGame(dt, t);
+    if (audio.duration > 0 && t >= audio.duration - 0.05) endGame();
+    return;
+  }
+  if (state === 'result') {
+    drawGame(0, audio.duration || 0);
+  }
+}
+
+// ── 인트로 ──
+function updateIntro(now, dt) {
+  const elapsed = now - introStart;
+  const prev = countVal;
+  if      (elapsed < 1000) countVal = 3;
+  else if (elapsed < 2000) countVal = 2;
+  else if (elapsed < 3000) countVal = 1;
+  else {
+    state = 'playing';
+    audio.currentTime = 0;
+    // 보간 기준점을 play() 시점으로 초기화 (첫 프레임 오차 방지)
+    audioSyncTime = 0;
+    audioSyncNow  = performance.now();
+    audio.play().catch(e => console.warn('play():', e));
+    return;
+  }
+  if (countVal !== prev) {
+    scanlines.push({ y: -40, spd: canvas.height * 1.6 });
+  }
+  for (const sl of scanlines) sl.y += sl.spd * dt / 1000;
+  scanlines = scanlines.filter(sl => sl.y < canvas.height + 80);
+}
+
+function drawIntro(now) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawBg(); drawLanes(); drawJudgLine();
+
+  for (const sl of scanlines) {
+    const g = ctx.createLinearGradient(0, sl.y - 50, 0, sl.y + 50);
+    g.addColorStop(0,   'rgba(255,255,255,0)');
+    g.addColorStop(0.5, 'rgba(255,255,255,0.5)');
+    g.addColorStop(1,   'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, sl.y - 50, canvas.width, 100);
+  }
+
+  const elapsed = now - introStart;
+  const phase   = elapsed % 1000;
+  const scale   = 1 + (1 - phase / 1000) * 0.4;
+  const alpha   = Math.min(1, (900 - phase) / 200);
+  if (alpha > 0) {
+    ctx.save();
+    ctx.globalAlpha  = alpha;
+    ctx.font         = `bold ${Math.round(120 * scale)}px sans-serif`;
+    ctx.fillStyle    = '#fff';
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor  = '#fff';
+    ctx.shadowBlur   = 60;
+    ctx.fillText(String(countVal), canvas.width / 2, canvas.height / 2);
+    ctx.restore();
+  }
+}
+
+// ── 게임 그리기 ──
+function drawGame(dt, t) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawBg(); drawLanes(); drawNotes(t); drawJudgLine();
+  drawFlash(dt); drawHUD(dt);
+}
+
+function drawBg() {
+  ctx.fillStyle = '#111';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+}
+
+function drawLanes() {
+  for (let i = 0; i < 5; i++) {
+    ctx.fillStyle = `rgba(${LANE_RGB[i]},0.04)`;
+    ctx.fillRect(i * laneW, 0, laneW, canvas.height);
+    if (i > 0) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(i * laneW, 0); ctx.lineTo(i * laneW, canvas.height); ctx.stroke();
+    }
+  }
+}
+
+function drawJudgLine() {
+  ctx.save();
+  ctx.shadowColor = '#fff'; ctx.shadowBlur = 18;
+  ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(0, judgmentY); ctx.lineTo(canvas.width, judgmentY); ctx.stroke();
+  ctx.restore();
+}
+
+function fillRoundRect(x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y,     x + w, y + r,     r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawNotes(t) {
+  const spd = getPxPerSec();
+  for (const n of notes) {
+    if (n.state === 'hit' || n.state === 'miss') continue;
+    const headY = judgmentY - (n.hitTime - t) * spd;
+    const rx = n.lane * laneW + 5;
+    const rw = laneW - 10;
+    const nh = Math.max(14, Math.round(laneW * 0.22));
+
+    if (n.isLong) {
+      const tailY = judgmentY - (n.endTime - t) * spd;
+      // active 상태는 판정선 펄스링이 항상 화면 안에 있으므로 절대 skip 금지
+      if (n.state !== 'active') {
+        if (headY > canvas.height + 60 || (tailY < -60 && headY < -60)) continue;
+      }
+
+      if (n.state === 'active') {
+        // 누르고 있는 중 — 판정선 위로 남은 tail 부분만 표시
+        // tailY가 판정선을 지나도(endTime 직후 autoRelease 유예구간) 최소 1px 바디 유지
+        const top = Math.min(Math.max(tailY, 0), judgmentY - 1);
+        const bot = judgmentY;
+        if (bot > top) {
+          // 남은 바디 (밝게)
+          ctx.save();
+          ctx.shadowColor = LANE_GLOW[n.lane]; ctx.shadowBlur = 14;
+          const bg = ctx.createLinearGradient(0, top, 0, bot);
+          bg.addColorStop(0, `rgba(${LANE_RGB[n.lane]},0.4)`);
+          bg.addColorStop(1, `rgba(${LANE_RGB[n.lane]},0.9)`);
+          ctx.fillStyle = bg;
+          ctx.fillRect(rx, top, rw, bot - top);
+          ctx.restore();
+        }
+        // 판정선에 펄스 링 (홀드 중 표시)
+        const pulse = (Math.sin(t * 12) + 1) / 2; // 0~1 진동
+        ctx.save();
+        ctx.shadowColor = LANE_GLOW[n.lane]; ctx.shadowBlur = 20 + pulse * 20;
+        ctx.strokeStyle = LANE_COLORS[n.lane];
+        ctx.lineWidth = 4 + pulse * 3;
+        ctx.strokeRect(rx, judgmentY - nh, rw, nh * 2);
+        ctx.restore();
+        // 진행률 바 (판정선 아래 작은 막대)
+        const total    = n.endTime - n.hitTime;
+        const elapsed2 = Math.max(0, t - n.hitTime);
+        const pct      = Math.min(1, elapsed2 / total);
+        ctx.fillStyle = `rgba(${LANE_RGB[n.lane]},0.9)`;
+        ctx.fillRect(rx, judgmentY + nh + 4, rw * pct, 6);
+        ctx.strokeStyle = `rgba(255,255,255,0.3)`;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(rx, judgmentY + nh + 4, rw, 6);
+      } else {
+        // 아직 안 누른 상태 — 통상 표시
+        const top = Math.max(tailY, 0);
+        const bot = Math.min(headY, canvas.height);
+        if (bot > top) {
+          const bg = ctx.createLinearGradient(0, top, 0, bot);
+          bg.addColorStop(0, `rgba(${LANE_RGB[n.lane]},0.25)`);
+          bg.addColorStop(1, `rgba(${LANE_RGB[n.lane]},0.7)`);
+          ctx.fillStyle = bg;
+          ctx.fillRect(rx, top, rw, bot - top);
+        }
+        if (headY > -20 && headY < canvas.height + 20) {
+          ctx.save();
+          ctx.shadowColor = LANE_GLOW[n.lane]; ctx.shadowBlur = 22;
+          ctx.fillStyle = LANE_COLORS[n.lane];
+          fillRoundRect(rx, headY - nh / 2, rw, nh, 4);
+          ctx.restore();
+        }
+      }
+    } else {
+      if (headY < -30 || headY > canvas.height + 30) continue;
+      ctx.save();
+      ctx.shadowColor = LANE_GLOW[n.lane]; ctx.shadowBlur = 20;
+      ctx.fillStyle = LANE_COLORS[n.lane];
+      fillRoundRect(rx, headY - nh / 2, rw, nh, 4);
+      ctx.restore();
+    }
+  }
+}
+
+function drawFlash(dt) {
+  for (let i = 0; i < 5; i++) {
+    if (pressFlash[i] <= 0) continue;
+    pressFlash[i] = Math.max(0, pressFlash[i] - dt);
+    const a = pressFlash[i] / 220;
+    ctx.fillStyle = `rgba(${LANE_RGB[i]},${(a * 0.25).toFixed(3)})`;
+    ctx.fillRect(i * laneW, 0, laneW, canvas.height);
+    ctx.save();
+    ctx.shadowColor = LANE_GLOW[i]; ctx.shadowBlur = 40;
+    ctx.fillStyle = `rgba(${LANE_RGB[i]},${(a * 0.9).toFixed(3)})`;
+    ctx.fillRect(i * laneW, judgmentY - 14, laneW, 28);
+    ctx.restore();
+  }
+}
+
+function drawHUD(dt) {
+  if (combo > 0) {
+    ctx.save();
+    ctx.font = 'bold 38px sans-serif';
+    ctx.fillStyle = '#fff'; ctx.textAlign = 'center';
+    ctx.shadowColor = '#fff'; ctx.shadowBlur = 14;
+    ctx.fillText(combo + ' COMBO', canvas.width / 2, 52);
+    ctx.restore();
+  }
+  ctx.save();
+  ctx.font = 'bold 22px monospace'; ctx.fillStyle = '#ccc'; ctx.textAlign = 'right';
+  ctx.fillText(String(score).padStart(8, '0'), canvas.width - 80, 38);
+  ctx.restore();
+
+  if (judgTimer > 0) {
+    judgTimer -= dt;
+    const a = Math.min(1, judgTimer / 180);
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.font = 'bold 34px sans-serif'; ctx.fillStyle = judgColor;
+    ctx.textAlign = 'center'; ctx.shadowColor = judgColor; ctx.shadowBlur = 24;
+    ctx.fillText(judgText, canvas.width / 2, judgmentY - 56);
+    ctx.restore();
+  }
+
+  if (wordHolding || wordTimer > 0) {
+    if (!wordHolding) wordTimer -= dt;
+    const a = wordHolding ? 1 : Math.min(1, wordTimer / 250);
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.font = 'bold 56px sans-serif'; ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center'; ctx.shadowColor = '#fff'; ctx.shadowBlur = 35;
+    ctx.fillText(currentWord, canvas.width / 2, canvas.height * 0.42);
+    ctx.restore();
+  }
+
+  // 홀드 중인 롱노트 안내
+  for (const n of notes) {
+    if (n.state !== 'active') continue;
+    const cx = n.lane * laneW + laneW / 2;
+    const pulse = (Math.sin(performance.now() / 120) + 1) / 2;
+    ctx.save();
+    ctx.globalAlpha  = 0.6 + pulse * 0.4;
+    ctx.font         = 'bold 18px sans-serif';
+    ctx.fillStyle    = LANE_COLORS[n.lane];
+    ctx.textAlign    = 'center';
+    ctx.shadowColor  = LANE_GLOW[n.lane];
+    ctx.shadowBlur   = 12;
+    ctx.fillText('HOLD!', cx, judgmentY - 30);
+    ctx.restore();
+  }
+}
+
+// ── 판정 ──
+function hitLane(lane) {
+  if (state !== 'playing') return;
+  pressFlash[lane] = 220;
+  const t = getSmoothAudioTime();
+  let best = null, bestDiff = Infinity;
+  for (const n of notes) {
+    if (n.lane !== lane || n.state !== 'pending') continue;
+    const diff = (t - n.hitTime) * 1000;
+    if (Math.abs(diff) < T_MISS && Math.abs(diff) < Math.abs(bestDiff)) {
+      best = n; bestDiff = diff;
+    }
+  }
+  if (!best) return;
+  const abs  = Math.abs(bestDiff);
+  const type = abs <= T_PERFECT ? 'PERFECT' : abs <= T_GOOD ? 'GOOD' : null;
+  if (!type) return;
+  if (best.isLong) {
+    best.state  = 'active';
+    currentWord = best.word;   // 누르는 즉시 단어 표시
+    wordHolding = true;        // 손 뗄 때까지 유지
+    wordTimer   = 0;
+  } else {
+    best.state = 'hit';
+    applyJudge(type, best.word, lane);
+  }
+}
+
+function releaseHold(lane) {
+  if (state !== 'playing') return;
+  const t = getSmoothAudioTime();
+  for (const n of notes) {
+    if (n.lane !== lane || n.state !== 'active') continue;
+    wordHolding = false;       // 홀드 종료 → 페이드아웃으로 전환
+    const diff = (t - n.endTime) * 1000;
+    if (diff < -(T_GOOD * 2)) {
+      n.state = 'miss'; applyJudge('MISS', n.word, lane);
+    } else {
+      n.state = 'hit';
+      applyJudge(Math.abs(diff) <= T_PERFECT ? 'PERFECT' : 'GOOD', n.word, lane);
+    }
+  }
+}
+
+function autoMiss(t) {
+  for (const n of notes) {
+    if (n.state !== 'pending') continue;
+    if ((t - n.hitTime) * 1000 > T_MISS) { n.state = 'miss'; applyJudge('MISS', n.word, n.lane); }
+  }
+}
+
+function autoRelease(t) {
+  for (const n of notes) {
+    if (n.state !== 'active') continue;
+    if ((t - n.endTime) * 1000 > T_GOOD) {
+      wordHolding = false;     // 홀드 종료 → 페이드아웃으로 전환
+      n.state = 'hit';
+      applyJudge('PERFECT', n.word, n.lane);
+    }
+  }
+}
+
+function applyJudge(type, word, lane) {
+  if (type === 'PERFECT') {
+    score += 300 + combo * 3; combo++; perfects++;
+    judgText = 'PERFECT'; judgColor = '#ffd700';
+  } else if (type === 'GOOD') {
+    score += 100 + combo; combo++; goods++;
+    judgText = 'GOOD'; judgColor = '#44ff88';
+  } else {
+    misses++; combo = 0;
+    judgText = 'MISS'; judgColor = '#ff4444';
+  }
+  if (combo > maxCombo) maxCombo = combo;
+  judgTimer = 450; pressFlash[lane] = 220;
+  if (type !== 'MISS') {
+    currentWord = word;
+    wordTimer   = 800;
+    // wordHolding은 이미 false로 전환됐거나 처음부터 false (단노트)
+  }
+}
+
+// ── 입력 ──
+function onKeyDown(e) {
+  if (e.repeat) return;
+  const key  = e.key === ' ' ? ' ' : e.key.toLowerCase();
+  const lane = LANE_KEYS.indexOf(key);
+  if (lane === -1) return;
+  e.preventDefault();
+  hitLane(lane);
+  document.getElementById('tb' + lane).classList.add('on');
+}
+function onKeyUp(e) {
+  const key  = e.key === ' ' ? ' ' : e.key.toLowerCase();
+  const lane = LANE_KEYS.indexOf(key);
+  if (lane === -1) return;
+  e.preventDefault();
+  releaseHold(lane);
+  document.getElementById('tb' + lane).classList.remove('on');
+}
+function setupTouch() {
+  for (let i = 0; i < 5; i++) {
+    const btn = document.getElementById('tb' + i);
+    btn.addEventListener('touchstart', e => { e.preventDefault(); hitLane(i); btn.classList.add('on'); }, {passive:false});
+    btn.addEventListener('touchend',   e => { e.preventDefault(); releaseHold(i); btn.classList.remove('on'); }, {passive:false});
+    btn.addEventListener('touchcancel',() => btn.classList.remove('on'));
+  }
+}
+
+// ── 시작 ──
+function startGame() {
+  document.getElementById('overlay').style.display = 'none';
+  countVal   = 3;
+  scanlines  = [];
+  scanlines.push({ y: -40, spd: canvas.height * 1.6 }); // 첫 번째 스캔라인
+  introStart = performance.now();
+  prevTime   = introStart;
+  state      = 'intro';
+}
+
+// ── 설정 ──
+function toggleSettings() { document.getElementById('settingsPanel').classList.toggle('open'); }
+function onSpeedChange(v) {
+  speedLevel = parseInt(v);
+  document.getElementById('speedLabel').textContent = speedLevel;
+  const s = loadStats(); s.spd = speedLevel; saveStats(s);
+}
+
+// ── 종료 ──
+function endGame() {
+  if (state === 'result') return;
+  state = 'result';
+  audio.pause();
+  const s = loadStats();
+  s.plays++; s.tp += perfects; s.tg += goods; s.tm += misses;
+  if (maxCombo > s.bc) s.bc = maxCombo;
+  saveStats(s);
+  document.getElementById('rP').textContent    = perfects;
+  document.getElementById('rG').textContent    = goods;
+  document.getElementById('rM').textContent    = misses;
+  document.getElementById('rC').textContent    = maxCombo;
+  document.getElementById('rTP').textContent   = s.plays;
+  document.getElementById('rTotP').textContent = s.tp;
+  document.getElementById('rTotG').textContent = s.tg;
+  document.getElementById('rTotM').textContent = s.tm;
+  document.getElementById('rBC').textContent   = s.bc;
+  document.getElementById('resultScreen').classList.add('open');
+}
+
+function restartGame() {
+  document.getElementById('resultScreen').classList.remove('open');
+  score = 0; combo = 0; maxCombo = 0; perfects = 0; goods = 0; misses = 0;
+  wordTimer = 0; wordHolding = false; judgTimer = 0; pressFlash = [0,0,0,0,0];
+  currentWord = '';
+  for (const n of notes) { n.state = 'pending'; }
+  audio.pause(); audio.currentTime = 0;
+  countVal  = 3; scanlines = [];
+  scanlines.push({ y: -40, spd: canvas.height * 1.6 });
+  introStart = performance.now();
+  prevTime   = introStart;
+  state      = 'intro';
+}
+</script>
+</body>
+</html>

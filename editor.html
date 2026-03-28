@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BeatVerse Editor</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0e0e14; color: #ddd;
+  font-family: 'Segoe UI', sans-serif;
+  height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+}
+/* ── 상단 ── */
+#topBar {
+  background: #1a1a26; border-bottom: 1px solid #333;
+  padding: 10px 14px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  flex-shrink: 0;
+}
+.btn {
+  padding: 7px 14px; border: 1px solid #555; background: #2a2a3a;
+  color: #ddd; border-radius: 6px; cursor: pointer; font-size: 14px;
+  transition: background 0.15s; white-space: nowrap;
+}
+.btn:hover  { background: #3a3a50; }
+.btn.active { background: #4a7aff; border-color: #4a7aff; color: #fff; }
+.btn.warn   { border-color: #a04040; }
+.btn.warn:hover { background: #5a2020; }
+#timeDisplay {
+  font-size: 20px; font-weight: bold; font-family: monospace;
+  color: #fff; min-width: 80px; text-align: center;
+  background: #111; padding: 4px 10px; border-radius: 6px;
+}
+#progressBarWrap {
+  flex: 1; min-width: 100px; height: 8px; background: #333;
+  border-radius: 4px; cursor: pointer; position: relative;
+}
+#progressBar { height: 100%; background: #4a7aff; border-radius: 4px; width: 0%; pointer-events: none; }
+.speedBtn { padding: 6px 11px; font-size: 13px; }
+.speedBtn.active { background: #2a6a2a; border-color: #3a9a3a; }
+#loadStatus { font-size: 13px; color: #f84; margin-left: auto; }
+
+/* ── 단어 목록 ── */
+#wordListWrap {
+  flex: 1; overflow-y: auto; padding: 10px 14px;
+  display: flex; flex-direction: column; gap: 3px;
+}
+#wordListWrap::-webkit-scrollbar { width: 6px; }
+#wordListWrap::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+
+.wRow {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 11px; border-radius: 7px; border: 1px solid transparent;
+}
+.wRow.done    { background: #162216; border-color: #2a4a2a; }
+.wRow.current { background: #1a2244; border-color: #4a7aff; box-shadow: 0 0 10px rgba(74,122,255,0.35); }
+.wRow.pending { background: #141418; opacity: 0.5; }
+.wRow.nowplaying { background: #222210; border-color: #7a7a20; }
+
+.wNum  { color: #555; font-size: 12px; width: 26px; text-align: right; flex-shrink: 0; }
+.wWord { font-size: 19px; font-weight: bold; width: 110px; flex-shrink: 0; }
+.wLane {
+  font-size: 11px; padding: 2px 7px; border-radius: 3px;
+  font-weight: bold; width: 50px; text-align: center; flex-shrink: 0;
+}
+.wTime { font-size: 12px; color: #888; font-family: monospace; flex: 1; }
+.wTime b { color: #7af; }
+.wLong { font-size: 11px; color: #f80; background: rgba(255,136,0,0.12); padding: 2px 6px; border-radius: 3px; }
+
+.lc0 { background: rgba(60,120,255,0.2); color: #8af; }
+.lc1 { background: rgba(60,210,100,0.2); color: #6d6; }
+.lc2 { background: rgba(230,210,60,0.2);  color: #ee8; }
+.lc3 { background: rgba(230,130,60,0.2);  color: #f94; }
+.lc4 { background: rgba(180,60,230,0.2);  color: #c8f; }
+
+/* ── 하단 ── */
+#bottomBar {
+  background: #1a1a26; border-top: 1px solid #333;
+  padding: 10px 14px; display: flex; flex-direction: column; gap: 8px;
+  flex-shrink: 0;
+}
+#laneButtons { display: flex; gap: 6px; }
+.laneBtn {
+  flex: 1; height: 68px; border: 2px solid #444; border-radius: 8px;
+  font-size: 15px; font-weight: bold; cursor: pointer; color: #fff;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  user-select: none; -webkit-user-select: none; background: rgba(255,255,255,0.04);
+  transition: filter 0.05s;
+}
+.laneBtn.hint   { border-width: 3px; filter: brightness(1.6); }
+.laneBtn.pressed { filter: brightness(2.5); }
+#lb0 { border-color: #3c78ff; }
+#lb1 { border-color: #3cd264; }
+#lb2 { border-color: #e6d23c; }
+#lb3 { border-color: #e6823c; }
+#lb4 { border-color: #b43ce6; }
+.lbk { font-size: 17px; }
+.lbl { font-size: 11px; opacity: 0.65; }
+
+#statusBar {
+  text-align: center; font-size: 13px; padding: 5px 8px;
+  border-radius: 6px; background: #111; color: #888; min-height: 30px;
+}
+#statusBar.rec {
+  background: rgba(255,60,60,0.12); color: #f66;
+  animation: blink 0.7s ease-in-out infinite alternate;
+}
+@keyframes blink { from { opacity: 0.7; } to { opacity: 1; } }
+
+/* ── 저장 패널 ── */
+#savePanel {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.88); display: none;
+  flex-direction: column; align-items: center; justify-content: center;
+  z-index: 50; gap: 10px; padding: 20px;
+}
+#savePanel.open { display: flex; }
+#savePanel h3   { font-size: 18px; color: #ffd700; }
+#saveMeta       { font-size: 13px; color: #888; }
+#jsonOut {
+  width: min(700px,90vw); height: 52vh;
+  background: #0a0a0a; color: #8f8; border: 1px solid #444;
+  border-radius: 8px; padding: 12px; font-family: monospace; font-size: 12px;
+  resize: none; outline: none;
+}
+#saveBtns { display: flex; gap: 10px; }
+#copyMsg  { font-size: 13px; color: #6f6; height: 18px; }
+</style>
+</head>
+<body>
+
+<!-- 상단 -->
+<div id="topBar">
+  <button class="btn" id="playBtn" onclick="togglePlay()">▶ 재생</button>
+  <div id="timeDisplay">0.00</div>
+  <div id="progressBarWrap" onclick="seekClick(event)">
+    <div id="progressBar"></div>
+  </div>
+  <button class="btn" onclick="rewind5()">↩ 5초</button>
+  <button class="btn warn" onclick="skipWord()">건너뛰기</button>
+  <span style="color:#555;font-size:12px;flex-shrink:0">속도:</span>
+  <button class="btn speedBtn" id="sp05"  onclick="setSpeed(0.5)">0.5x</button>
+  <button class="btn speedBtn" id="sp075" onclick="setSpeed(0.75)">0.75x</button>
+  <button class="btn speedBtn active" id="sp10" onclick="setSpeed(1.0)">1.0x</button>
+  <button class="btn" onclick="openSave()" style="border-color:#6af;color:#6af;flex-shrink:0">💾 저장</button>
+  <label class="btn" style="border-color:#fa0;color:#fa0;flex-shrink:0;cursor:pointer">
+    🎵 음원 선택
+    <input type="file" id="audioFile" accept="audio/*" style="display:none" onchange="loadAudioFile(this)">
+  </label>
+  <span id="loadStatus">준비됨</span>
+</div>
+
+<!-- 단어 목록 -->
+<div id="wordListWrap"></div>
+
+<!-- 하단 -->
+<div id="bottomBar">
+  <div id="laneButtons">
+    <button class="laneBtn" id="lb0"><span class="lbk">A</span><span class="lbl">1음절</span></button>
+    <button class="laneBtn" id="lb1"><span class="lbk">S</span><span class="lbl">2음절</span></button>
+    <button class="laneBtn" id="lb2"><span class="lbk">D</span><span class="lbl">3음절</span></button>
+    <button class="laneBtn" id="lb3"><span class="lbk">F</span><span class="lbl">4음절</span></button>
+    <button class="laneBtn" id="lb4"><span class="lbk">Space</span><span class="lbl">5+음절</span></button>
+  </div>
+  <div id="statusBar">로딩 중...</div>
+</div>
+
+<!-- 저장 패널 -->
+<div id="savePanel">
+  <h3>저장 — JSON 출력</h3>
+  <div id="saveMeta"></div>
+  <textarea id="jsonOut" readonly></textarea>
+  <div id="saveBtns">
+    <button class="btn" onclick="copyJson()">📋 복사</button>
+    <button class="btn" onclick="closeSave()">닫기</button>
+  </div>
+  <div id="copyMsg"></div>
+</div>
+
+<script>
+const LANE_KEYS  = ['a','s','d','f',' '];
+const LANE_NAMES = ['1음절','2음절','3음절','4음절','5+음절'];
+const LANE_COLORS = ['lc0','lc1','lc2','lc3','lc4'];
+
+// ── JSON 데이터 내장 (fetch 불필요) ──
+const WORD_DATA = [
+  {"word":"예수","start":3.16,"end":4.56,"syllables":2},
+  {"word":"그리스도의","start":4.56,"end":5.96,"syllables":5},
+  {"word":"계시라","start":5.96,"end":8.0,"syllables":3},
+  {"word":"이는","start":9.46,"end":10.22,"syllables":2},
+  {"word":"하나님이","start":10.22,"end":11.64,"syllables":4},
+  {"word":"그에게","start":11.64,"end":13.22,"syllables":3},
+  {"word":"주사","start":13.22,"end":15.0,"syllables":2},
+  {"word":"반드시","start":16.14,"end":17.5,"syllables":3},
+  {"word":"속히","start":17.5,"end":18.54,"syllables":2},
+  {"word":"될","start":18.54,"end":18.84,"syllables":1},
+  {"word":"일을","start":18.84,"end":19.86,"syllables":2},
+  {"word":"그","start":19.86,"end":20.24,"syllables":1},
+  {"word":"종들에게","start":20.24,"end":21.6,"syllables":4},
+  {"word":"보이시려고","start":21.6,"end":23.0,"syllables":5},
+  {"word":"그","start":23.4,"end":24.1,"syllables":1},
+  {"word":"천사를","start":24.1,"end":25.7,"syllables":3},
+  {"word":"그","start":25.7,"end":26.3,"syllables":1},
+  {"word":"종","start":26.3,"end":26.8,"syllables":1},
+  {"word":"요한에게","start":26.8,"end":28.26,"syllables":4},
+  {"word":"보내어","start":28.26,"end":30.0,"syllables":3},
+  {"word":"지시하신","start":31.24,"end":32.52,"syllables":4},
+  {"word":"것이라","start":32.52,"end":37.0,"syllables":3},
+  {"word":"요한은","start":37.66,"end":38.82,"syllables":3},
+  {"word":"하나님의","start":38.82,"end":40.04,"syllables":4},
+  {"word":"말씀과","start":40.04,"end":41.3,"syllables":3},
+  {"word":"예수","start":41.3,"end":41.8,"syllables":2},
+  {"word":"그리스도의","start":41.8,"end":43.1,"syllables":5},
+  {"word":"증거","start":43.1,"end":43.88,"syllables":2},
+  {"word":"곧","start":43.88,"end":45.0,"syllables":1},
+  {"word":"자기의","start":45.62,"end":46.9,"syllables":3},
+  {"word":"본","start":46.9,"end":47.2,"syllables":1},
+  {"word":"것을","start":47.2,"end":47.94,"syllables":2},
+  {"word":"다","start":47.94,"end":48.5,"syllables":1},
+  {"word":"증거하였느니라","start":48.5,"end":51.0,"syllables":7},
+  {"word":"이","start":51.0,"end":51.8,"syllables":1},
+  {"word":"예언의","start":51.8,"end":53.42,"syllables":3},
+  {"word":"말씀을","start":53.42,"end":54.36,"syllables":3},
+  {"word":"읽는","start":54.36,"end":54.86,"syllables":2},
+  {"word":"자와","start":54.86,"end":55.92,"syllables":2},
+  {"word":"듣는","start":55.92,"end":56.68,"syllables":2},
+  {"word":"자들과","start":56.68,"end":58.0,"syllables":3},
+  {"word":"그","start":58.98,"end":59.52,"syllables":1},
+  {"word":"가운데","start":59.52,"end":61.18,"syllables":3},
+  {"word":"기록한","start":61.18,"end":64.02,"syllables":3},
+  {"word":"것을","start":64.02,"end":65.0,"syllables":2},
+  {"word":"지키는","start":65.88,"end":67.68,"syllables":3},
+  {"word":"자들이","start":67.68,"end":68.62,"syllables":3},
+  {"word":"복이","start":68.62,"end":70.06,"syllables":2},
+  {"word":"있나니","start":70.06,"end":71.0,"syllables":3},
+  {"word":"때가","start":72.06,"end":73.16,"syllables":2},
+  {"word":"가까움이라","start":73.16,"end":76.3,"syllables":5}
+];
+
+let audio   = null;
+let words   = [];
+let origWords = [];
+let currentIdx  = 0;
+let isRecording = false;
+let rafId = null;
+
+// ── 초기화 ──
+window.addEventListener('load', () => {
+  // JSON은 내장 데이터에서 바로 로드
+  origWords = WORD_DATA;
+  words = WORD_DATA.map(d => ({
+    word:      d.word,
+    start:     Number(d.start),
+    end:       Number(d.end),
+    syllables: Number(d.syllables),
+  }));
+  document.getElementById('loadStatus').textContent = `✅ ${words.length}개 단어`;
+  document.getElementById('loadStatus').style.color = '#6f6';
+
+  // 오디오: 같은 폴더에서 열면 바로 로드, 아니면 파일 선택 필요
+  audio = new Audio('videoplayback.m4a');
+  audio.preload = 'auto';
+  audio.addEventListener('ended', () => {
+    document.getElementById('playBtn').textContent = '▶ 재생';
+    stopRaf(); renderList();
+  });
+  audio.addEventListener('canplaythrough', () => {
+    document.getElementById('loadStatus').textContent = `✅ ${words.length}개 단어 · 음원 로드됨`;
+  }, { once: true });
+  audio.addEventListener('error', () => {
+    document.getElementById('loadStatus').textContent =
+      `✅ ${words.length}개 단어 · ⚠️ 음원 없음 → 🎵 음원 선택 버튼으로 로드하세요`;
+    document.getElementById('loadStatus').style.color = '#fa0';
+  }, { once: true });
+
+  document.addEventListener('keydown', onKeyDown);
+  document.addEventListener('keyup',   onKeyUp);
+  setupLaneButtons();
+  setSpeed(1.0);
+  renderList();
+  scrollToCurrent();
+  updateStatus();
+});
+
+function loadAudioFile(input) {
+  if (!input.files || !input.files[0]) return;
+  const url = URL.createObjectURL(input.files[0]);
+  const wasPlaying = audio && !audio.paused;
+  const prevTime   = audio ? audio.currentTime : 0;
+  if (audio) { audio.pause(); stopRaf(); }
+  audio = new Audio(url);
+  audio.currentTime = prevTime;
+  audio.addEventListener('ended', () => {
+    document.getElementById('playBtn').textContent = '▶ 재생';
+    stopRaf(); renderList();
+  });
+  setSpeed(parseFloat(document.querySelector('.speedBtn.active').textContent) || 1.0);
+  document.getElementById('loadStatus').textContent =
+    `✅ ${words.length}개 단어 · 🎵 ${input.files[0].name}`;
+  document.getElementById('loadStatus').style.color = '#6f6';
+  if (wasPlaying) { audio.play(); startRaf(); }
+}
+
+// ── 단어 목록 렌더링 ──
+function renderList() {
+  const wrap = document.getElementById('wordListWrap');
+  const t = (audio && !audio.paused) ? audio.currentTime : (audio ? audio.currentTime : 0);
+  wrap.innerHTML = '';
+  words.forEach((w, i) => renderRow(wrap, w, i, t));
+  updateHint();
+}
+
+function renderRow(wrap, w, i, t) {
+  const lane   = Math.min(w.syllables, 5) - 1;
+  const isLong = (w.end - w.start) >= 0.5;
+  const dur    = (w.end - w.start).toFixed(2);
+
+  const div = document.createElement('div');
+  div.id        = 'wr' + i;
+  div.className = 'wRow ' + rowClass(i, t);
+  div.innerHTML =
+    `<span class="wNum">${i+1}</span>` +
+    `<span class="wWord">${w.word}</span>` +
+    `<span class="wLane ${LANE_COLORS[lane]}">${LANE_NAMES[lane]}</span>` +
+    `<span class="wTime" id="wt${i}"><b>${w.start.toFixed(3)}</b> ~ <b>${w.end.toFixed(3)}</b>s (${dur}s)</span>` +
+    (isLong ? `<span class="wLong">롱노트</span>` : '');
+  wrap.appendChild(div);
+}
+
+function rowClass(i, t) {
+  if (i < currentIdx) return 'done';
+  if (i === currentIdx) return 'current';
+  if (t >= words[i].start && t <= words[i].end) return 'nowplaying';
+  return 'pending';
+}
+
+// 전체 재렌더링 없이 클래스만 갱신 (RAF 중 호출)
+function updateRowClasses(t) {
+  for (let i = Math.max(0, currentIdx - 2); i < words.length; i++) {
+    const el = document.getElementById('wr' + i);
+    if (!el) continue;
+    const c = 'wRow ' + rowClass(i, t);
+    if (el.className !== c) el.className = c;
+  }
+  // 기록 중이면 현재 행 타임 live 갱신
+  if (isRecording) {
+    const te = document.getElementById('wt' + currentIdx);
+    if (te) {
+      const dur = Math.max(0, t - words[currentIdx].start).toFixed(2);
+      te.innerHTML = `<b>${words[currentIdx].start.toFixed(3)}</b> ~ <b>${t.toFixed(3)}</b>s (${dur}s)`;
+    }
+  }
+}
+
+function scrollToCurrent() {
+  const el = document.getElementById('wr' + currentIdx);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function updateHint() {
+  for (let i = 0; i < 5; i++) document.getElementById('lb' + i).classList.remove('hint');
+  if (currentIdx < words.length) {
+    const lane = Math.min(words[currentIdx].syllables, 5) - 1;
+    document.getElementById('lb' + lane).classList.add('hint');
+  }
+}
+
+// ── 오디오 ──
+function togglePlay() {
+  if (!audio) return;
+  if (audio.paused) {
+    audio.play().catch(e => console.warn(e));
+    document.getElementById('playBtn').textContent = '⏸ 정지';
+    startRaf();
+  } else {
+    audio.pause();
+    document.getElementById('playBtn').textContent = '▶ 재생';
+    stopRaf();
+    renderList();
+  }
+}
+
+function rewind5() {
+  if (!audio) return;
+  if (isRecording) {
+    isRecording = false;
+    words[currentIdx].start = origWords[currentIdx].start;
+    words[currentIdx].end   = origWords[currentIdx].end;
+    updateStatus();
+  }
+  audio.currentTime = Math.max(0, audio.currentTime - 5);
+}
+
+function seekClick(e) {
+  if (!audio || !audio.duration) return;
+  const rect = e.currentTarget.getBoundingClientRect();
+  audio.currentTime = ((e.clientX - rect.left) / rect.width) * audio.duration;
+}
+
+function setSpeed(s) {
+  if (audio) audio.playbackRate = s;
+  ['sp05','sp075','sp10'].forEach(id => document.getElementById(id).classList.remove('active'));
+  const map = { 0.5:'sp05', 0.75:'sp075', 1.0:'sp10' };
+  if (map[s]) document.getElementById(map[s]).classList.add('active');
+}
+
+// ── RAF 루프 ──
+function startRaf() {
+  if (rafId) return;
+  function loop() {
+    if (!audio) return;
+    const t = audio.currentTime;
+    document.getElementById('timeDisplay').textContent = t.toFixed(2);
+    if (audio.duration > 0)
+      document.getElementById('progressBar').style.width = (t / audio.duration * 100) + '%';
+    updateRowClasses(t);
+    rafId = requestAnimationFrame(loop);
+  }
+  rafId = requestAnimationFrame(loop);
+}
+function stopRaf() {
+  if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+}
+
+// ── 기록 ──
+function pressButton() {
+  if (words.length === 0) {
+    console.warn('[Editor] words가 아직 로드되지 않았습니다');
+    return;
+  }
+  if (currentIdx >= words.length) return;
+  if (isRecording) return;
+  const t = audio ? audio.currentTime : 0;
+  words[currentIdx].start = t;
+  isRecording = true;
+  console.log(`[Editor] start 기록: [${currentIdx}] "${words[currentIdx].word}" @ ${t.toFixed(3)}s`);
+  updateStatus();
+  // 현재 행 타임 즉시 갱신
+  const te = document.getElementById('wt' + currentIdx);
+  if (te) te.innerHTML = `<b>${t.toFixed(3)}</b> ~ <b>...</b>s`;
+}
+
+function releaseButton() {
+  if (!isRecording) return;
+  const t = audio ? audio.currentTime : 0;
+  words[currentIdx].end = t;
+  isRecording = false;
+  const w      = words[currentIdx];
+  const dur    = (w.end - w.start).toFixed(2);
+  const isLong = (w.end - w.start) >= 0.5;
+  console.log(`[Editor] end 기록: [${currentIdx}] "${w.word}" ${w.start.toFixed(3)}~${w.end.toFixed(3)}s (${dur}s)${isLong?' 롱노트':''}`);
+  currentIdx++;
+  renderList();
+  scrollToCurrent();
+  updateStatus();
+}
+
+function skipWord() {
+  if (currentIdx >= words.length) return;
+  if (isRecording) { isRecording = false; }
+  console.log(`[Editor] 건너뜀: [${currentIdx}] "${words[currentIdx].word}"`);
+  currentIdx++;
+  renderList();
+  scrollToCurrent();
+  updateStatus();
+}
+
+function updateStatus() {
+  const el = document.getElementById('statusBar');
+  if (words.length === 0) { el.textContent = '단어 데이터 로딩 중...'; el.className = ''; return; }
+  if (currentIdx >= words.length) { el.textContent = '✅ 모든 단어 기록 완료! 저장 버튼을 누르세요.'; el.className = ''; return; }
+  const w = words[currentIdx];
+  if (isRecording) {
+    el.textContent = `● 기록 중: [${currentIdx+1}/${words.length}] "${w.word}" — 손 떼면 end 기록`;
+    el.className = 'rec';
+  } else {
+    el.textContent = `다음 [${currentIdx+1}/${words.length}]: "${w.word}" (${LANE_NAMES[Math.min(w.syllables,5)-1]}) — 버튼 누르면 start 기록`;
+    el.className = '';
+  }
+}
+
+// ── 입력 ──
+function onKeyDown(e) {
+  if (e.target.tagName === 'TEXTAREA') return;
+  if (e.repeat) return;
+  const key  = e.key === ' ' ? ' ' : e.key.toLowerCase();
+  const lane = LANE_KEYS.indexOf(key);
+  if (key === ' ') e.preventDefault();
+  if (lane !== -1) {
+    document.getElementById('lb' + lane).classList.add('pressed');
+    pressButton();
+  } else if (key === 'p') togglePlay();
+  else if (key === 'r') rewind5();
+  else if (key === 'n') skipWord();
+}
+
+function onKeyUp(e) {
+  const key  = e.key === ' ' ? ' ' : e.key.toLowerCase();
+  const lane = LANE_KEYS.indexOf(key);
+  if (lane !== -1) {
+    document.getElementById('lb' + lane).classList.remove('pressed');
+    releaseButton();
+  }
+}
+
+function setupLaneButtons() {
+  for (let i = 0; i < 5; i++) {
+    const btn = document.getElementById('lb' + i);
+    btn.addEventListener('mousedown',  e => { e.preventDefault(); pressButton(); btn.classList.add('pressed'); });
+    btn.addEventListener('mouseup',    e => { e.preventDefault(); releaseButton(); btn.classList.remove('pressed'); });
+    btn.addEventListener('touchstart', e => { e.preventDefault(); pressButton(); btn.classList.add('pressed'); }, {passive:false});
+    btn.addEventListener('touchend',   e => { e.preventDefault(); releaseButton(); btn.classList.remove('pressed'); }, {passive:false});
+    btn.addEventListener('touchcancel',() => btn.classList.remove('pressed'));
+  }
+}
+
+// ── 저장 ──
+function openSave() {
+  console.log('[Editor] 저장 시도. words.length =', words.length);
+
+  if (words.length === 0) {
+    alert('단어 데이터가 아직 로드되지 않았습니다. 잠시 후 다시 시도하세요.');
+    return;
+  }
+
+  let out;
+  try {
+    out = words.map((w, i) => {
+      const s = Number(w.start);
+      const e = Number(w.end);
+      if (isNaN(s) || isNaN(e)) {
+        console.warn(`[Editor] [${i}] "${w.word}" start/end가 NaN. 원본 사용.`);
+        return {
+          word:      w.word,
+          start:     Number(origWords[i].start),
+          end:       Number(origWords[i].end),
+          syllables: Number(w.syllables),
+        };
+      }
+      return {
+        word:      w.word,
+        start:     Math.round(s * 1000) / 1000,
+        end:       Math.round(e * 1000) / 1000,
+        syllables: Number(w.syllables),
+      };
+    });
+    console.log('[Editor] 변환 완료. 첫 항목:', out[0]);
+  } catch(err) {
+    console.error('[Editor] 변환 오류:', err);
+    alert('변환 중 오류: ' + err.message);
+    return;
+  }
+
+  const json = JSON.stringify(out, null, 2);
+  document.getElementById('jsonOut').value  = json;
+  document.getElementById('saveMeta').textContent =
+    `총 ${out.length}개 단어 | 기록 완료: ${currentIdx}개 | 미기록: ${words.length - currentIdx}개`;
+  document.getElementById('savePanel').classList.add('open');
+}
+
+function closeSave() {
+  document.getElementById('savePanel').classList.remove('open');
+}
+
+function copyJson() {
+  const ta = document.getElementById('jsonOut');
+  const text = ta.value;
+  if (!text) { alert('저장할 내용이 없습니다.'); return; }
+  navigator.clipboard.writeText(text)
+    .then(() => showCopyMsg('✅ 클립보드에 복사됐습니다!'))
+    .catch(() => {
+      ta.select();
+      document.execCommand('copy');
+      showCopyMsg('✅ 복사됐습니다 (fallback)');
+    });
+}
+
+function showCopyMsg(msg) {
+  const el = document.getElementById('copyMsg');
+  el.textContent = msg;
+  setTimeout(() => el.textContent = '', 2500);
+}
+</script>
+</body>
+</html>
