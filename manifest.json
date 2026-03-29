@@ -4,7 +4,7 @@
   "description": "계시록 암송 리듬게임",
   "start_url": "/",
   "display": "standalone",
-  "orientation": "landscape",
+  "orientation": "portrait",
   "background_color": "#111111",
   "theme_color": "#ffd700",
   "icons": [
