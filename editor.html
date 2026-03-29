@@ -240,8 +240,9 @@ const WORD_DATA = [
 let audio   = null;
 let words   = [];
 let origWords = [];
-let currentIdx  = 0;
-let isRecording = false;
+let currentIdx      = 0;
+let syllableProgress = 0;   // 현재 단어에서 몇 음절 눌렀는지
+let isHoldingLast   = false; // 마지막 음절 누르고 있는 중 (end 기록 대기)
 let rafId = null;
 
 // ── 초기화 ──
@@ -249,10 +250,11 @@ window.addEventListener('load', () => {
   // JSON은 내장 데이터에서 바로 로드
   origWords = WORD_DATA;
   words = WORD_DATA.map(d => ({
-    word:      d.word,
-    start:     Number(d.start),
-    end:       Number(d.end),
-    syllables: Number(d.syllables),
+    word:          d.word,
+    start:         Number(d.start),
+    end:           Number(d.end),
+    syllables:     Number(d.syllables),
+    syllableTimes: [],
   }));
   document.getElementById('loadStatus').textContent = `✅ ${words.length}개 단어`;
   document.getElementById('loadStatus').style.color = '#6f6';
@@ -310,10 +312,32 @@ function renderList() {
   updateHint();
 }
 
+function buildTimeHtml(w, isCurrent) {
+  // 음절타임이 하나라도 기록됐으면 음절별로 표시
+  const recorded = w.syllableTimes.filter(t => t !== undefined);
+  if (recorded.length > 0) {
+    const parts = [];
+    for (let si = 0; si < w.syllables; si++) {
+      if (w.syllableTimes[si] !== undefined) {
+        parts.push(`<b>${w.syllableTimes[si].toFixed(3)}</b>`);
+      } else if (isCurrent) {
+        parts.push('<span style="color:#444">○</span>');
+      }
+    }
+    return parts.join(' · ') + 's';
+  }
+  // 미기록: 원본 참조 시간 표시
+  const dur = (w.end - w.start).toFixed(2);
+  return `<b>${w.start.toFixed(3)}</b> ~ <b>${w.end.toFixed(3)}</b>s (${dur}s)`;
+}
+
 function renderRow(wrap, w, i, t) {
-  const lane   = Math.min(w.syllables, 5) - 1;
-  const isLong = (w.end - w.start) >= 0.5;
-  const dur    = (w.end - w.start).toFixed(2);
+  const lane      = Math.min(w.syllables, 5) - 1;
+  const isCurrent = (i === currentIdx);
+  const dur       = (w.end - w.start).toFixed(2);
+  const isLong    = (w.syllableTimes.length >= 2)
+    ? (w.syllableTimes[w.syllableTimes.length-1] - w.syllableTimes[0]) >= 0.5
+    : (w.end - w.start) >= 0.5;
 
   const div = document.createElement('div');
   div.id        = 'wr' + i;
@@ -322,7 +346,7 @@ function renderRow(wrap, w, i, t) {
     `<span class="wNum">${i+1}</span>` +
     `<span class="wWord">${w.word}</span>` +
     `<span class="wLane ${LANE_COLORS[lane]}">${LANE_NAMES[lane]}</span>` +
-    `<span class="wTime" id="wt${i}"><b>${w.start.toFixed(3)}</b> ~ <b>${w.end.toFixed(3)}</b>s (${dur}s)</span>` +
+    `<span class="wTime" id="wt${i}">${buildTimeHtml(w, isCurrent)}</span>` +
     (isLong ? `<span class="wLong">롱노트</span>` : '');
   wrap.appendChild(div);
 }
@@ -342,13 +366,10 @@ function updateRowClasses(t) {
     const c = 'wRow ' + rowClass(i, t);
     if (el.className !== c) el.className = c;
   }
-  // 기록 중이면 현재 행 타임 live 갱신
-  if (isRecording) {
+  // 마지막 음절 홀드 중: end 시간 실시간 갱신
+  if (isHoldingLast) {
     const te = document.getElementById('wt' + currentIdx);
-    if (te) {
-      const dur = Math.max(0, t - words[currentIdx].start).toFixed(2);
-      te.innerHTML = `<b>${words[currentIdx].start.toFixed(3)}</b> ~ <b>${t.toFixed(3)}</b>s (${dur}s)`;
-    }
+    if (te) te.innerHTML = buildTimeHtml({ ...words[currentIdx], end: t }, true);
   }
 }
 
@@ -382,10 +403,13 @@ function togglePlay() {
 
 function rewind5() {
   if (!audio) return;
-  if (isRecording) {
-    isRecording = false;
+  // 현재 단어 음절 기록 초기화
+  if (syllableProgress > 0 || isHoldingLast) {
+    words[currentIdx].syllableTimes = [];
     words[currentIdx].start = origWords[currentIdx].start;
     words[currentIdx].end   = origWords[currentIdx].end;
+    syllableProgress = 0;
+    isHoldingLast   = false;
     updateStatus();
   }
   audio.currentTime = Math.max(0, audio.currentTime - 5);
@@ -429,27 +453,39 @@ function pressButton() {
     return;
   }
   if (currentIdx >= words.length) return;
-  if (isRecording) return;
+  if (isHoldingLast) return;  // 마지막 음절 홀드 중엔 무시
+  const w = words[currentIdx];
   const t = audio ? audio.currentTime : 0;
-  words[currentIdx].start = t;
-  isRecording = true;
-  console.log(`[Editor] start 기록: [${currentIdx}] "${words[currentIdx].word}" @ ${t.toFixed(3)}s`);
+
+  w.syllableTimes[syllableProgress] = t;
+  if (syllableProgress === 0) w.start = t;
+
+  console.log(`[Editor] 음절 ${syllableProgress+1}/${w.syllables} 기록: [${currentIdx}] "${w.word}" @ ${t.toFixed(3)}s`);
+  syllableProgress++;
+
+  if (syllableProgress >= w.syllables) {
+    // 마지막 음절: end는 일단 tap 시각으로, keyup에서 실제 end 기록
+    w.end = t;
+    isHoldingLast = true;
+    const te = document.getElementById('wt' + currentIdx);
+    if (te) te.innerHTML = buildTimeHtml(w, true);
+  } else {
+    // 중간 음절 → 현재 행만 갱신
+    const te = document.getElementById('wt' + currentIdx);
+    if (te) te.innerHTML = buildTimeHtml(w, true);
+  }
   updateStatus();
-  // 현재 행 타임 즉시 갱신
-  const te = document.getElementById('wt' + currentIdx);
-  if (te) te.innerHTML = `<b>${t.toFixed(3)}</b> ~ <b>...</b>s`;
 }
 
 function releaseButton() {
-  if (!isRecording) return;
+  if (!isHoldingLast) return;
   const t = audio ? audio.currentTime : 0;
-  words[currentIdx].end = t;
-  isRecording = false;
-  const w      = words[currentIdx];
-  const dur    = (w.end - w.start).toFixed(2);
-  const isLong = (w.end - w.start) >= 0.5;
-  console.log(`[Editor] end 기록: [${currentIdx}] "${w.word}" ${w.start.toFixed(3)}~${w.end.toFixed(3)}s (${dur}s)${isLong?' 롱노트':''}`);
+  const w = words[currentIdx];
+  w.end = t;
+  isHoldingLast = false;
+  console.log(`[Editor] end 기록: [${currentIdx}] "${w.word}" end=${t.toFixed(3)}s`);
   currentIdx++;
+  syllableProgress = 0;
   renderList();
   scrollToCurrent();
   updateStatus();
@@ -457,8 +493,14 @@ function releaseButton() {
 
 function skipWord() {
   if (currentIdx >= words.length) return;
-  if (isRecording) { isRecording = false; }
+  if (syllableProgress > 0 || isHoldingLast) {
+    words[currentIdx].syllableTimes = [];
+    words[currentIdx].start = origWords[currentIdx].start;
+    words[currentIdx].end   = origWords[currentIdx].end;
+  }
   console.log(`[Editor] 건너뜀: [${currentIdx}] "${words[currentIdx].word}"`);
+  syllableProgress = 0;
+  isHoldingLast   = false;
   currentIdx++;
   renderList();
   scrollToCurrent();
@@ -470,11 +512,14 @@ function updateStatus() {
   if (words.length === 0) { el.textContent = '단어 데이터 로딩 중...'; el.className = ''; return; }
   if (currentIdx >= words.length) { el.textContent = '✅ 모든 단어 기록 완료! 저장 버튼을 누르세요.'; el.className = ''; return; }
   const w = words[currentIdx];
-  if (isRecording) {
-    el.textContent = `● 기록 중: [${currentIdx+1}/${words.length}] "${w.word}" — 손 떼면 end 기록`;
+  if (isHoldingLast) {
+    el.textContent = `● 홀드 중: [${currentIdx+1}/${words.length}] "${w.word}" — 손 떼면 end 기록`;
+    el.className = 'rec';
+  } else if (syllableProgress > 0) {
+    el.textContent = `● 기록 중: [${currentIdx+1}/${words.length}] "${w.word}" — ${syllableProgress}/${w.syllables} 음절 완료, ${w.syllables - syllableProgress}번 더 누르세요`;
     el.className = 'rec';
   } else {
-    el.textContent = `다음 [${currentIdx+1}/${words.length}]: "${w.word}" (${LANE_NAMES[Math.min(w.syllables,5)-1]}) — 버튼 누르면 start 기록`;
+    el.textContent = `다음 [${currentIdx+1}/${words.length}]: "${w.word}" (${LANE_NAMES[Math.min(w.syllables,5)-1]}) — 버튼을 ${w.syllables}번 눌러 마지막은 홀드`;
     el.className = '';
   }
 }
@@ -482,10 +527,10 @@ function updateStatus() {
 // ── 입력 ──
 function onKeyDown(e) {
   if (e.target.tagName === 'TEXTAREA') return;
-  if (e.repeat) return;
   const key  = e.key === ' ' ? ' ' : e.key.toLowerCase();
+  if (key === ' ') e.preventDefault();   // repeat 여부와 무관하게 항상 차단
+  if (e.repeat) return;
   const lane = LANE_KEYS.indexOf(key);
-  if (key === ' ') e.preventDefault();
   if (lane !== -1) {
     document.getElementById('lb' + lane).classList.add('pressed');
     pressButton();
@@ -531,17 +576,19 @@ function openSave() {
       if (isNaN(s) || isNaN(e)) {
         console.warn(`[Editor] [${i}] "${w.word}" start/end가 NaN. 원본 사용.`);
         return {
-          word:      w.word,
-          start:     Number(origWords[i].start),
-          end:       Number(origWords[i].end),
-          syllables: Number(w.syllables),
+          word:          w.word,
+          start:         Number(origWords[i].start),
+          end:           Number(origWords[i].end),
+          syllables:     Number(w.syllables),
+          syllableTimes: [],
         };
       }
       return {
-        word:      w.word,
-        start:     Math.round(s * 1000) / 1000,
-        end:       Math.round(e * 1000) / 1000,
-        syllables: Number(w.syllables),
+        word:          w.word,
+        start:         Math.round(s * 1000) / 1000,
+        end:           Math.round(e * 1000) / 1000,
+        syllables:     Number(w.syllables),
+        syllableTimes: (w.syllableTimes || []).map(t => Math.round(t * 1000) / 1000),
       };
     });
     console.log('[Editor] 변환 완료. 첫 항목:', out[0]);

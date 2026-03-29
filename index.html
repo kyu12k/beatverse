@@ -161,7 +161,7 @@ const LANE_GLOW   = ['#3c78ff','#3cd264','#e6d23c','#e6823c','#b43ce6'];
 const T_PERFECT   = 80;   // ms
 const T_GOOD      = 150;  // ms
 const T_MISS      = 210;  // ms (노트가 이 ms 지나면 자동 미스)
-const LONG_THRESH = 0.5;  // 초 이상이면 롱노트
+const LONG_THRESH = 0.3;  // 초 이상이면 롱노트
 const IS_MOBILE   = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
 
 // ── 전역 변수 ──
@@ -171,7 +171,7 @@ let state        = 'loading';
 let speedLevel   = 5;
 let score = 0, combo = 0, maxCombo = 0, perfects = 0, goods = 0, misses = 0;
 let judgmentY = 0, laneW = 0;
-let currentWord = '', wordTimer = 0, wordHolding = false; // wordHolding: 롱노트 홀드 중 단어 유지
+let currentWord = '', wordTimer = 0, wordHolding = false;
 let judgText = '', judgColor = '', judgTimer = 0;
 let pressFlash   = [0,0,0,0,0];
 let introStart   = 0, countVal = 3, scanlines = [];
@@ -275,16 +275,59 @@ function resize() {
 }
 
 // ── 노트 파싱 ──
+function getSyllableTimes(d) {
+  if (d.syllableTimes && d.syllableTimes.length >= d.syllables) {
+    return d.syllableTimes.slice(0, d.syllables);
+  }
+  // fallback: start~end 사이 균등 분배
+  if (d.syllables === 1) return [d.start];
+  const times = [];
+  for (let i = 0; i < d.syllables; i++) {
+    times.push(d.start + (d.end - d.start) * i / (d.syllables - 1));
+  }
+  return times;
+}
+
+const LAST_SYLL_CAP = 0.8;  // 마지막 음절 fallback 최대 지속시간(초)
+
 function buildNotes(data) {
-  notes = data.map((d, i) => ({
-    id:      i,
-    word:    d.word,
-    hitTime: d.start,
-    endTime: d.end,
-    lane:    Math.min(d.syllables, 5) - 1,
-    isLong:  (d.end - d.start) >= LONG_THRESH,
-    state:   'pending',
-  }));
+  notes = [];
+  data.forEach((d, wordIdx) => {
+    const lane          = Math.min(d.syllables, 5) - 1;
+    const times         = getSyllableTimes(d);
+    const nextWordStart = wordIdx + 1 < data.length ? data[wordIdx + 1].start : null;
+
+    for (let si = 0; si < d.syllables; si++) {
+      let endTime;
+      if (si < d.syllables - 1) {
+        // 중간 음절: 다음 음절 시작까지
+        endTime = times[si + 1];
+      } else {
+        // 마지막 음절: 에디터에서 홀드로 기록된 word.end 우선 사용
+        // end > 마지막 syllableTime 이면 실제 홀드 데이터가 있는 것
+        const recordedEnd = Number(d.end);
+        if (recordedEnd > times[si]) {
+          endTime = recordedEnd;
+        } else {
+          // 구버전 데이터 fallback: 다음 단어 시작까지 (최대 LAST_SYLL_CAP)
+          endTime = nextWordStart !== null
+            ? Math.min(nextWordStart, times[si] + LAST_SYLL_CAP)
+            : times[si] + LAST_SYLL_CAP;
+        }
+      }
+      notes.push({
+        id:        wordIdx * 100 + si,
+        word:      d.word,
+        syllIdx:   si,
+        syllTotal: d.syllables,
+        hitTime:   times[si],
+        endTime,
+        lane,
+        isLong:    (endTime - times[si]) >= LONG_THRESH,
+        state:     'pending',
+      });
+    }
+  });
 }
 
 // ── 속도 ──
@@ -435,18 +478,13 @@ function drawNotes(t) {
 
     if (n.isLong) {
       const tailY = judgmentY - (n.endTime - t) * spd;
-      // active 상태는 판정선 펄스링이 항상 화면 안에 있으므로 절대 skip 금지
       if (n.state !== 'active') {
         if (headY > canvas.height + 60 || (tailY < -60 && headY < -60)) continue;
       }
-
       if (n.state === 'active') {
-        // 누르고 있는 중 — 판정선 위로 남은 tail 부분만 표시
-        // tailY가 판정선을 지나도(endTime 직후 autoRelease 유예구간) 최소 1px 바디 유지
         const top = Math.min(Math.max(tailY, 0), judgmentY - 1);
         const bot = judgmentY;
         if (bot > top) {
-          // 남은 바디 (밝게)
           ctx.save();
           if (!IS_MOBILE) { ctx.shadowColor = LANE_GLOW[n.lane]; ctx.shadowBlur = 14; }
           const bg = ctx.createLinearGradient(0, top, 0, bot);
@@ -456,33 +494,26 @@ function drawNotes(t) {
           ctx.fillRect(rx, top, rw, bot - top);
           ctx.restore();
         }
-        // 판정선에 펄스 링 (홀드 중 표시)
-        const pulse = (Math.sin(t * 12) + 1) / 2; // 0~1 진동
+        const pulse = (Math.sin(t * 12) + 1) / 2;
         ctx.save();
         if (!IS_MOBILE) { ctx.shadowColor = LANE_GLOW[n.lane]; ctx.shadowBlur = 20 + pulse * 20; }
         ctx.strokeStyle = LANE_COLORS[n.lane];
         ctx.lineWidth = 4 + pulse * 3;
         ctx.strokeRect(rx, judgmentY - nh, rw, nh * 2);
         ctx.restore();
-        // 진행률 바 (판정선 아래 작은 막대)
-        const total    = n.endTime - n.hitTime;
-        const elapsed2 = Math.max(0, t - n.hitTime);
-        const pct      = Math.min(1, elapsed2 / total);
+        const pct = Math.min(1, Math.max(0, t - n.hitTime) / (n.endTime - n.hitTime));
         ctx.fillStyle = `rgba(${LANE_RGB[n.lane]},0.9)`;
         ctx.fillRect(rx, judgmentY + nh + 4, rw * pct, 6);
-        ctx.strokeStyle = `rgba(255,255,255,0.3)`;
-        ctx.lineWidth = 1;
+        ctx.strokeStyle = `rgba(255,255,255,0.3)`; ctx.lineWidth = 1;
         ctx.strokeRect(rx, judgmentY + nh + 4, rw, 6);
       } else {
-        // 아직 안 누른 상태 — 통상 표시
         const top = Math.max(tailY, 0);
         const bot = Math.min(headY, canvas.height);
         if (bot > top) {
           const bg = ctx.createLinearGradient(0, top, 0, bot);
           bg.addColorStop(0, `rgba(${LANE_RGB[n.lane]},0.25)`);
           bg.addColorStop(1, `rgba(${LANE_RGB[n.lane]},0.7)`);
-          ctx.fillStyle = bg;
-          ctx.fillRect(rx, top, rw, bot - top);
+          ctx.fillStyle = bg; ctx.fillRect(rx, top, rw, bot - top);
         }
         if (headY > -20 && headY < canvas.height + 20) {
           ctx.save();
@@ -591,8 +622,8 @@ function hitLane(lane) {
   if (!type) return;
   if (best.isLong) {
     best.state  = 'active';
-    currentWord = best.word;   // 누르는 즉시 단어 표시
-    wordHolding = true;        // 손 뗄 때까지 유지
+    currentWord = best.word;
+    wordHolding = true;
     wordTimer   = 0;
   } else {
     best.state = 'hit';
@@ -605,7 +636,7 @@ function releaseHold(lane) {
   const t = getSmoothAudioTime();
   for (const n of notes) {
     if (n.lane !== lane || n.state !== 'active') continue;
-    wordHolding = false;       // 홀드 종료 → 페이드아웃으로 전환
+    wordHolding = false;
     const diff = (t - n.endTime) * 1000;
     if (diff < -(T_GOOD * 2)) {
       n.state = 'miss'; applyJudge('MISS', n.word, lane);
@@ -627,7 +658,7 @@ function autoRelease(t) {
   for (const n of notes) {
     if (n.state !== 'active') continue;
     if ((t - n.endTime) * 1000 > T_GOOD) {
-      wordHolding = false;     // 홀드 종료 → 페이드아웃으로 전환
+      wordHolding = false;
       n.state = 'hit';
       applyJudge('PERFECT', n.word, n.lane);
     }
@@ -650,7 +681,7 @@ function applyJudge(type, word, lane) {
   if (type !== 'MISS') {
     currentWord = word;
     wordTimer   = 800;
-    // wordHolding은 이미 false로 전환됐거나 처음부터 false (단노트)
+    // wordHolding은 이미 false로 전환됐거나 처음부터 false (탭 노트)
   }
 }
 
