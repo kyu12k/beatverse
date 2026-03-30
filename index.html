@@ -23,13 +23,17 @@ canvas { display: block; width: 100%; height: 100%; }
 }
 #overlay h1 { font-size: 56px; font-weight: bold; color: #ffd700; letter-spacing: 6px; margin-bottom: 10px; text-shadow: 0 0 30px #ffd700; }
 #overlay p  { font-size: 16px; color: #888; margin-bottom: 48px; }
-#startBtn {
-  padding: 18px 60px; font-size: 24px; font-weight: bold;
-  background: linear-gradient(135deg,#3c78ff,#b43ce6);
+#diffBtns { display: flex; gap: 24px; margin-bottom: 16px; }
+.diffBtn {
+  padding: 16px 40px; font-size: 20px; font-weight: bold;
   border: none; color: #fff; border-radius: 12px; cursor: pointer;
-  box-shadow: 0 0 30px rgba(100,100,255,0.5); transition: transform 0.1s;
+  transition: transform 0.1s;
 }
-#startBtn:hover { transform: scale(1.05); }
+.diffBtn:hover:not(:disabled) { transform: scale(1.05); }
+.diffBtn:disabled { opacity: 0.4; cursor: default; }
+.diffDesc { font-size: 12px; color: #888; margin-top: 6px; }
+#easyBtn { background: linear-gradient(135deg,#2e8b57,#3cd264); box-shadow: 0 0 20px rgba(60,200,100,0.4); }
+#hardBtn { background: linear-gradient(135deg,#cc3c78,#e63c3c); box-shadow: 0 0 20px rgba(200,60,100,0.4); }
 #loadingMsg { font-size: 16px; color: #888; margin-top: 16px; }
 
 #settingsBtn {
@@ -112,7 +116,16 @@ canvas { display: block; width: 100%; height: 100%; }
     </div>
     <h1>BeatVerse</h1>
     <p>계시록 암송 리듬게임</p>
-    <button id="startBtn" disabled>로딩 중...</button>
+    <div id="diffBtns">
+      <div style="text-align:center">
+        <button class="diffBtn" id="easyBtn" disabled onclick="startGame('easy')">쉬움</button>
+        <div class="diffDesc">단어당 버튼 1번</div>
+      </div>
+      <div style="text-align:center">
+        <button class="diffBtn" id="hardBtn" disabled onclick="startGame('hard')">어려움</button>
+        <div class="diffDesc">음절마다 버튼</div>
+      </div>
+    </div>
     <div id="loadingMsg">음원 로딩 중...</div>
   </div>
 
@@ -135,6 +148,7 @@ canvas { display: block; width: 100%; height: 100%; }
   <!-- 결과 화면 -->
   <div id="resultScreen">
     <h2>RESULT</h2>
+    <div id="rDiff" style="font-size:14px;color:#888;margin-bottom:4px;"></div>
     <div class="rScore" id="rScore">0</div>
     <div class="rRow">PERFECT <span id="rP">0</span></div>
     <div class="rRow">GOOD    <span id="rG">0</span></div>
@@ -176,6 +190,8 @@ let judgText = '', judgColor = '', judgTimer = 0;
 let pressFlash   = [0,0,0,0,0];
 let introStart   = 0, countVal = 3, scanlines = [];
 let prevTime     = 0;
+let difficulty   = 'hard'; // 'easy' | 'hard'
+let wordData     = [];
 
 // 오디오 시간 보간용 (audio.currentTime은 ~23ms 간격 업데이트라 노트가 뚝뚝 끊김)
 let audioSyncTime = 0;   // 마지막으로 읽은 audio.currentTime
@@ -222,6 +238,7 @@ window.addEventListener('load', () => {
   fetch('word_timestamps.json')
     .then(r => r.json())
     .then(data => {
+      wordData = data;
       buildNotes(data);
       // 오디오 로드 시작 (기다리지 않음 - 카운트다운 3초 동안 로드)
       audio = new Audio('videoplayback.m4a');
@@ -251,11 +268,9 @@ window.addEventListener('load', () => {
       document.addEventListener('keyup',   onKeyUp);
       setupTouch();
 
-      // 시작 버튼 활성화
-      const btn = document.getElementById('startBtn');
-      btn.disabled = false;
-      btn.textContent = '▶ 시작하기';
-      btn.onclick = startGame;
+      // 난이도 버튼 활성화
+      document.getElementById('easyBtn').disabled = false;
+      document.getElementById('hardBtn').disabled = false;
       document.getElementById('loadingMsg').textContent = '';
 
       state    = 'ready';
@@ -297,35 +312,60 @@ function buildNotes(data) {
     const times         = getSyllableTimes(d);
     const nextWordStart = wordIdx + 1 < data.length ? data[wordIdx + 1].start : null;
 
-    for (let si = 0; si < d.syllables; si++) {
+    if (difficulty === 'easy') {
+      // 쉬움: 단어 전체가 노트 1개
+      const hitTime = times[0];
+      const recordedEnd = Number(d.end);
       let endTime;
-      if (si < d.syllables - 1) {
-        // 중간 음절: 다음 음절 시작까지
-        endTime = times[si + 1];
+      if (recordedEnd > hitTime) {
+        endTime = recordedEnd;
       } else {
-        // 마지막 음절: 에디터에서 홀드로 기록된 word.end 우선 사용
-        // end > 마지막 syllableTime 이면 실제 홀드 데이터가 있는 것
-        const recordedEnd = Number(d.end);
-        if (recordedEnd > times[si]) {
-          endTime = recordedEnd;
-        } else {
-          // 구버전 데이터 fallback: 다음 단어 시작까지 (최대 LAST_SYLL_CAP)
-          endTime = nextWordStart !== null
-            ? Math.min(nextWordStart, times[si] + LAST_SYLL_CAP)
-            : times[si] + LAST_SYLL_CAP;
-        }
+        endTime = nextWordStart !== null
+          ? Math.min(nextWordStart, hitTime + LAST_SYLL_CAP)
+          : hitTime + LAST_SYLL_CAP;
       }
       notes.push({
-        id:        wordIdx * 100 + si,
+        id:        wordIdx,
         word:      d.word,
-        syllIdx:   si,
+        syllIdx:   0,
         syllTotal: d.syllables,
-        hitTime:   times[si],
+        hitTime,
         endTime,
         lane,
-        isLong:    (endTime - times[si]) >= LONG_THRESH,
+        isLong:    (endTime - hitTime) >= LONG_THRESH,
         state:     'pending',
       });
+    } else {
+      // 어려움: 음절마다 노트
+      for (let si = 0; si < d.syllables; si++) {
+        let endTime;
+        if (si < d.syllables - 1) {
+          // 중간 음절: 다음 음절 시작까지
+          endTime = times[si + 1];
+        } else {
+          // 마지막 음절: 에디터에서 홀드로 기록된 word.end 우선 사용
+          const recordedEnd = Number(d.end);
+          if (recordedEnd > times[si]) {
+            endTime = recordedEnd;
+          } else {
+            // 구버전 데이터 fallback: 다음 단어 시작까지 (최대 LAST_SYLL_CAP)
+            endTime = nextWordStart !== null
+              ? Math.min(nextWordStart, times[si] + LAST_SYLL_CAP)
+              : times[si] + LAST_SYLL_CAP;
+          }
+        }
+        notes.push({
+          id:        wordIdx * 100 + si,
+          word:      d.word,
+          syllIdx:   si,
+          syllTotal: d.syllables,
+          hitTime:   times[si],
+          endTime,
+          lane,
+          isLong:    (endTime - times[si]) >= LONG_THRESH,
+          state:     'pending',
+        });
+      }
     }
   });
 }
@@ -713,11 +753,17 @@ function setupTouch() {
 }
 
 // ── 시작 ──
-function startGame() {
+function startGame(diff) {
+  difficulty = diff;
+  buildNotes(wordData);
   document.getElementById('overlay').style.display = 'none';
+  score = 0; combo = 0; maxCombo = 0; perfects = 0; goods = 0; misses = 0;
+  wordTimer = 0; wordHolding = false; judgTimer = 0; pressFlash = [0,0,0,0,0];
+  currentWord = '';
+  audio.pause(); audio.currentTime = 0;
   countVal   = 3;
   scanlines  = [];
-  scanlines.push({ y: -40, spd: canvas.height * 1.6 }); // 첫 번째 스캔라인
+  scanlines.push({ y: -40, spd: canvas.height * 1.6 });
   introStart = performance.now();
   prevTime   = introStart;
   state      = 'intro';
@@ -788,6 +834,7 @@ function endGame() {
   if (!s.bs) s.bs = 0;
   if (score > s.bs) s.bs = score;
   saveStats(s);
+  document.getElementById('rDiff').textContent = difficulty === 'easy' ? '쉬움' : '어려움';
   document.getElementById('rScore').textContent = score.toLocaleString();
   document.getElementById('rP').textContent    = perfects;
   document.getElementById('rG').textContent    = goods;
@@ -804,16 +851,9 @@ function endGame() {
 
 function restartGame() {
   document.getElementById('resultScreen').classList.remove('open');
-  score = 0; combo = 0; maxCombo = 0; perfects = 0; goods = 0; misses = 0;
-  wordTimer = 0; wordHolding = false; judgTimer = 0; pressFlash = [0,0,0,0,0];
-  currentWord = '';
-  for (const n of notes) { n.state = 'pending'; }
   audio.pause(); audio.currentTime = 0;
-  countVal  = 3; scanlines = [];
-  scanlines.push({ y: -40, spd: canvas.height * 1.6 });
-  introStart = performance.now();
-  prevTime   = introStart;
-  state      = 'intro';
+  document.getElementById('overlay').style.display = '';
+  state = 'ready';
 }
 </script>
 </body>

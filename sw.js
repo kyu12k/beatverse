@@ -1,4 +1,4 @@
-const CACHE = 'beatverse-v3';
+const CACHE = 'beatverse-v4';
 const ASSETS = [
   './',
   './index.html',
